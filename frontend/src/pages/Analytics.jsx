@@ -39,11 +39,12 @@ function Analytics() {
   return (
     <div className="w-full min-h-screen">
       <header className="bg-gray-900/50 backdrop-blur-lg shadow-lg w-full p-4 fixed top-0 left-0 z-10 border-b border-white/10 flex items-center gap-4">
-        <Link 
-          to={`/project/${projectId}`} 
-          className="bg-gray-700/70 hover:bg-gray-600/70 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
+        <Link
+          to={`/project/${projectId}`}
+          className="flex items-center gap-2 bg-gradient-to-r from-gray-700 via-gray-800 to-gray-900 hover:from-violet-700 hover:to-gray-800 text-white font-semibold py-2 px-5 rounded-full shadow-lg transition-all duration-200 border border-violet-500/30 hover:border-violet-400/70 focus:outline-none focus:ring-2 focus:ring-violet-400 text-sm"
         >
-          &larr; Back to Project Board
+          <span className="text-lg">&larr;</span>
+          <span>Back to Project Board</span>
         </Link>
         <h1 className="text-2xl font-bold text-white">Project Analytics</h1>
       </header>

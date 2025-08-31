@@ -27,11 +27,11 @@ const Column = ({ title, status, tasks, moveTask, onCardClick }) => {
       <h3 className="font-bold text-white mb-4">{title}</h3>
       <div className="space-y-4">
         {tasks.map(task => (
-          <TaskCard 
-            key={task._id} 
-            task={task} 
-            moveTask={moveTask} 
-            onCardClick={onCardClick} 
+          <TaskCard
+            key={task._id}
+            task={task}
+            moveTask={moveTask}
+            onCardClick={onCardClick}
           />
         ))}
       </div>
@@ -106,10 +106,10 @@ function ProjectBoard() {
   if (loading) return <div className="text-white text-center p-10">Loading...</div>;
   if (error) return <div className="text-red-400 text-center p-10">{error}</div>;
 
-  const filteredTasks = tasks.filter(task => 
+  const filteredTasks = tasks.filter(task =>
     task.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  
+
   const getTasksByStatus = (status) => filteredTasks.filter(task => task.status === status);
 
   return (
@@ -117,33 +117,38 @@ function ProjectBoard() {
       <div className="w-full min-h-screen">
         <header className="bg-gray-900/50 backdrop-blur-lg shadow-lg w-full p-4 flex justify-between items-center fixed top-0 left-0 z-10 border-b border-white/10">
           <div className="flex items-center gap-4">
-            <Link 
-              to="/dashboard" 
-              className="bg-gray-700/70 hover:bg-gray-600/70 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm"
+            <Link
+              to="/dashboard"
+              className="flex items-center gap-2 bg-gradient-to-r from-gray-700 via-gray-800 to-gray-900 hover:from-violet-700 hover:to-gray-800 text-white font-semibold py-2 px-5 rounded-full shadow-lg transition-all duration-200 border border-violet-500/30 hover:border-violet-400/70 focus:outline-none focus:ring-2 focus:ring-violet-400 text-sm"
             >
-              &larr; Back to Dashboard
+              <span className="text-lg">&larr;</span>
+              <span>Back to Dashboard</span>
             </Link>
             <h1 className="text-2xl font-bold text-white">{project ? project.name : 'Loading...'}</h1>
           </div>
           <div className="flex items-center gap-4">
-            <Link 
-              to={`/project/${projectId}/analytics`} 
-              className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+            <Link
+              to={`/project/${projectId}/analytics`}
+              className="flex items-center gap-2 bg-gradient-to-r from-purple-500 via-violet-600 to-indigo-700 hover:from-violet-700 hover:to-indigo-800 text-white font-semibold py-2 px-6 rounded-full shadow-lg transition-all duration-200 border border-violet-400/30 hover:border-violet-400/70 focus:outline-none focus:ring-2 focus:ring-violet-400 text-sm"
             >
-              View Analytics
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 19V6M7 19V10M15 19V14M19 19V12" />
+              </svg>
+              <span>View Analytics</span>
             </Link>
-            <button 
+            <button
               onClick={() => setIsModalOpen(true)}
-              className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors"
+              className="flex items-center gap-2 bg-gradient-to-r from-green-500 via-green-600 to-green-700 hover:from-violet-600 hover:to-green-700 text-white font-semibold py-2 px-6 rounded-full shadow-lg transition-all duration-200 border border-green-300/30 hover:border-violet-400/70 focus:outline-none focus:ring-2 focus:ring-violet-400 text-sm"
             >
-              + Add New Task
+              <span className="text-lg font-bold">+</span>
+              <span>Add New Task</span>
             </button>
           </div>
         </header>
 
         <main className="p-8 mt-24">
           <div className="mb-6">
-            <input 
+            <input
               type="text"
               placeholder="Search tasks by title..."
               className="w-full p-3 rounded-lg bg-gray-900/70 text-white border border-white/10 focus:border-violet-400 focus:ring-violet-400 focus:outline-none transition"
@@ -160,7 +165,7 @@ function ProjectBoard() {
       </div>
 
       <CreateTaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} projectId={projectId} onTaskCreated={handleTaskCreated} />
-      
+
       <TaskDetailModal
         isOpen={!!selectedTask}
         task={selectedTask}
