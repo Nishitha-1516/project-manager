@@ -6,24 +6,37 @@ const { protect } = require('../middleware/auth');
 const router = express.Router();
 router.use(protect);
 
-// GET /api/users — list users who share at least one project with the requester
-// (plus the requester themselves). Used for task assignment dropdowns.
+// GET /api/users
+// Returns users who share at least one project with the requester.
+// Used for task-assignment dropdowns and member-invite selects.
 router.get('/', async (req, res) => {
   try {
-    // Find all projects the current user is part of
     const projects = await Project.find({
-      $or: [{ owner: req.user._id }, { members: req.user._id }],
+      $or: [{ owner: req.user._id }, { 'members.user': req.user._id }],
     }).select('owner members');
 
-    // Collect every unique user ID across those projects
     const userIdSet = new Set();
-    userIdSet.add(String(req.user._id)); // always include self
+    userIdSet.add(String(req.user._id));
     projects.forEach((p) => {
       userIdSet.add(String(p.owner));
-      (p.members || []).forEach((m) => userIdSet.add(String(m)));
+      p.members.forEach((m) => userIdSet.add(String(m.user)));
     });
 
-    const users = await User.find({ _id: { $in: [...userIdSet] } }).select('name email avatar role');
+    const users = await User.find({ _id: { $in: [...userIdSet] } }).select(
+      'name email avatar role'
+    );
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/users/all
+// Returns ALL registered users — used only for the "invite new member" flow
+// so an admin can find someone who hasn't joined any shared project yet.
+router.get('/all', async (req, res) => {
+  try {
+    const users = await User.find({}).select('name email avatar role');
     res.json(users);
   } catch (err) {
     res.status(500).json({ message: err.message });

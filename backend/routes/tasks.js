@@ -6,24 +6,23 @@ const { protect } = require('../middleware/auth');
 const router = express.Router();
 router.use(protect);
 
-// Helper: get all project IDs the current user is a member of or owns
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
 async function getUserProjectIds(userId) {
   const projects = await Project.find({
-    $or: [{ owner: userId }, { members: userId }],
+    $or: [{ owner: userId }, { 'members.user': userId }],
   }).select('_id');
   return projects.map((p) => p._id);
 }
 
-// Helper: verify user has access to a specific project
 async function userCanAccessProject(userId, projectId) {
   const project = await Project.findOne({
     _id: projectId,
-    $or: [{ owner: userId }, { members: userId }],
+    $or: [{ owner: userId }, { 'members.user': userId }],
   });
   return !!project;
 }
 
-// Helper: verify user has access to a specific task (via project membership)
 async function userCanAccessTask(userId, taskId) {
   const task = await Task.findById(taskId).select('project reporter assignee');
   if (!task) return { task: null, allowed: false };
@@ -31,18 +30,18 @@ async function userCanAccessTask(userId, taskId) {
   return { task, allowed };
 }
 
-// GET /api/tasks?project=id&status=&assignee=&mine=true
+// ─── Routes ──────────────────────────────────────────────────────────────────
+
+// GET /api/tasks?project=id&status=&assignee=&priority=&mine=true
 router.get('/', async (req, res) => {
   try {
     let projectIds;
 
     if (req.query.project) {
-      // Verify the user belongs to the requested project
       const allowed = await userCanAccessProject(req.user._id, req.query.project);
       if (!allowed) return res.status(403).json({ message: 'Access denied to this project' });
       projectIds = [req.query.project];
     } else {
-      // No project filter — scope to all projects the user is part of
       projectIds = await getUserProjectIds(req.user._id);
     }
 
@@ -50,7 +49,6 @@ router.get('/', async (req, res) => {
     if (req.query.status) filter.status = req.query.status;
     if (req.query.priority) filter.priority = req.query.priority;
 
-    // ?mine=true → only tasks assigned to or reported by the current user
     if (req.query.mine === 'true') {
       filter.$or = [{ assignee: req.user._id }, { reporter: req.user._id }];
     } else if (req.query.assignee) {
@@ -73,7 +71,6 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     if (!req.body.project) return res.status(400).json({ message: 'project is required' });
-
     const allowed = await userCanAccessProject(req.user._id, req.body.project);
     if (!allowed) return res.status(403).json({ message: 'Access denied to this project' });
 
@@ -157,7 +154,7 @@ router.post('/:id/comments', async (req, res) => {
   }
 });
 
-// PATCH /api/tasks/:id/status  — quick status update (e.g. drag-and-drop)
+// PATCH /api/tasks/:id/status
 router.patch('/:id/status', async (req, res) => {
   try {
     const { task, allowed } = await userCanAccessTask(req.user._id, req.params.id);

@@ -7,39 +7,39 @@ const COLORS = ['#cba6f7','#89b4fa','#94e2d5','#a6e3a1','#f9e2af','#fab387','#f3
 export default function ProjectModal({ project, onClose, onSave }) {
   const isEdit = !!project;
   const [form, setForm] = useState({
-    name: '',
+    name:        '',
     description: '',
-    status: 'planning',
-    priority: 'medium',
-    color: '#cba6f7',
-    dueDate: '',
-    tags: '',
+    status:      'planning',
+    priority:    'medium',
+    color:       '#cba6f7',
+    dueDate:     '',
+    tags:        '',
   });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (project) {
       setForm({
-        name: project.name || '',
+        name:        project.name        || '',
         description: project.description || '',
-        status: project.status || 'planning',
-        priority: project.priority || 'medium',
-        color: project.color || '#cba6f7',
-        dueDate: project.dueDate ? project.dueDate.split('T')[0] : '',
-        tags: (project.tags || []).join(', '),
+        status:      project.status      || 'planning',
+        priority:    project.priority    || 'medium',
+        color:       project.color       || '#cba6f7',
+        dueDate:     project.dueDate ? project.dueDate.split('T')[0] : '',
+        tags:        (project.tags || []).join(', '),
       });
     }
   }, [project]);
 
-  const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  const handleChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
-  const handleSubmit = async e => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) { toast.error('Project name is required'); return; }
     setLoading(true);
     const payload = {
       ...form,
-      tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      tags:    form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
       dueDate: form.dueDate || undefined,
     };
     try {
@@ -62,7 +62,7 @@ export default function ProjectModal({ project, onClose, onSave }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
           <div className="modal-title">{isEdit ? 'Edit Project' : 'New Project'}</div>
@@ -109,14 +109,16 @@ export default function ProjectModal({ project, onClose, onSave }) {
             <div className="form-group">
               <label className="form-label">Color</label>
               <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
-                {COLORS.map(c => (
+                {COLORS.map((c) => (
                   <button
                     key={c} type="button"
-                    onClick={() => setForm(f => ({ ...f, color: c }))}
+                    onClick={() => setForm((f) => ({ ...f, color: c }))}
                     style={{
-                      width: 28, height: 28, borderRadius: '50%', background: c, border: 'none', cursor: 'pointer',
-                      outline: form.color === c ? `3px solid white` : 'none',
-                      outlineOffset: 2, transform: form.color === c ? 'scale(1.2)' : 'scale(1)',
+                      width: 28, height: 28, borderRadius: '50%', background: c,
+                      border: 'none', cursor: 'pointer',
+                      outline: form.color === c ? '3px solid white' : 'none',
+                      outlineOffset: 2,
+                      transform: form.color === c ? 'scale(1.2)' : 'scale(1)',
                       transition: 'all 0.15s',
                     }}
                   />

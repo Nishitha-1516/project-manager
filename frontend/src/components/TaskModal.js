@@ -5,7 +5,7 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 
 function getInitials(name = '') {
-  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 }
 
 export default function TaskModal({ task, projectId, defaultStatus, users, onClose, onSave, onDelete }) {
@@ -13,49 +13,49 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
   const isEdit = !!task;
   const [tab, setTab] = useState('details');
   const [form, setForm] = useState({
-    title: '',
-    description: '',
-    status: defaultStatus || 'todo',
-    priority: 'medium',
-    assignee: '',
-    dueDate: '',
+    title:          '',
+    description:    '',
+    status:         defaultStatus || 'todo',
+    priority:       'medium',
+    assignee:       '',
+    dueDate:        '',
     estimatedHours: '',
-    tags: '',
+    tags:           '',
   });
-  const [loading, setLoading] = useState(false);
-  const [comment, setComment] = useState('');
+  const [loading,    setLoading]    = useState(false);
+  const [comment,    setComment]    = useState('');
   const [commenting, setCommenting] = useState(false);
-  const [taskData, setTaskData] = useState(task);
+  const [taskData,   setTaskData]   = useState(task);
 
   useEffect(() => {
     if (task) {
       setForm({
-        title: task.title || '',
-        description: task.description || '',
-        status: task.status || 'todo',
-        priority: task.priority || 'medium',
-        assignee: task.assignee?._id || '',
-        dueDate: task.dueDate ? task.dueDate.split('T')[0] : '',
+        title:          task.title          || '',
+        description:    task.description    || '',
+        status:         task.status         || 'todo',
+        priority:       task.priority       || 'medium',
+        assignee:       task.assignee?._id  || '',
+        dueDate:        task.dueDate ? task.dueDate.split('T')[0] : '',
         estimatedHours: task.estimatedHours || '',
-        tags: (task.tags || []).join(', '),
+        tags:           (task.tags || []).join(', '),
       });
       setTaskData(task);
     }
   }, [task]);
 
-  const handleChange = e => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  const handleChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
-  const handleSubmit = async e => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) { toast.error('Task title is required'); return; }
     setLoading(true);
     const payload = {
       ...form,
-      project: projectId,
-      tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-      dueDate: form.dueDate || undefined,
+      project:        projectId,
+      tags:           form.tags ? form.tags.split(',').map((t) => t.trim()).filter(Boolean) : [],
+      dueDate:        form.dueDate        || undefined,
       estimatedHours: form.estimatedHours ? Number(form.estimatedHours) : undefined,
-      assignee: form.assignee || null,
+      assignee:       form.assignee       || null,
     };
     try {
       let data;
@@ -76,7 +76,7 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
     }
   };
 
-  const handleComment = async e => {
+  const handleComment = async (e) => {
     e.preventDefault();
     if (!comment.trim()) return;
     setCommenting(true);
@@ -90,16 +90,15 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
   };
 
   const handleStatusChange = async (newStatus) => {
-    setForm(f => ({ ...f, status: newStatus }));
+    setForm((f) => ({ ...f, status: newStatus }));
     if (isEdit) {
-      try {
-        await api.patch(`/tasks/${task._id}/status`, { status: newStatus });
-      } catch { /* will be saved on form submit */ }
+      try { await api.patch(`/tasks/${task._id}/status`, { status: newStatus }); }
+      catch { /* will be synced on full save */ }
     }
   };
 
   return (
-    <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="modal-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal modal-wide">
         <div className="modal-header">
           <div className="modal-title">{isEdit ? 'Edit Task' : 'New Task'}</div>
@@ -113,8 +112,9 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
 
         {isEdit && (
           <div className="tab-bar" style={{ padding: '0 24px', marginBottom: 0 }}>
-            {[['details','Details'],['comments','Comments']].map(([v,l]) => (
-              <button key={v} className={`tab-btn ${tab === v ? 'active' : ''}`} onClick={() => setTab(v)}>{l}
+            {[['details', 'Details'], ['comments', 'Comments']].map(([v, l]) => (
+              <button key={v} className={`tab-btn ${tab === v ? 'active' : ''}`} onClick={() => setTab(v)}>
+                {l}
                 {v === 'comments' && taskData?.comments?.length > 0 && (
                   <span style={{ marginLeft: 6, background: 'var(--surface0)', borderRadius: 10, padding: '1px 6px', fontSize: '0.7rem', color: 'var(--subtext0)' }}>
                     {taskData.comments.length}
@@ -125,6 +125,7 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
           </div>
         )}
 
+        {/* ── Details ── */}
         {tab === 'details' && (
           <form onSubmit={handleSubmit}>
             <div className="modal-body">
@@ -139,7 +140,7 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
               <div className="grid-2">
                 <div className="form-group">
                   <label className="form-label">Status</label>
-                  <select className="form-input" name="status" value={form.status} onChange={e => handleStatusChange(e.target.value)}>
+                  <select className="form-input" name="status" value={form.status} onChange={(e) => handleStatusChange(e.target.value)}>
                     <option value="todo">To Do</option>
                     <option value="in-progress">In Progress</option>
                     <option value="review">Review</option>
@@ -161,7 +162,7 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
                   <label className="form-label">Assignee</label>
                   <select className="form-input" name="assignee" value={form.assignee} onChange={handleChange}>
                     <option value="">Unassigned</option>
-                    {users.map(u => (
+                    {users.map((u) => (
                       <option key={u._id} value={u._id}>{u.name}</option>
                     ))}
                   </select>
@@ -191,19 +192,22 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
           </form>
         )}
 
+        {/* ── Comments ── */}
         {tab === 'comments' && isEdit && (
           <div className="modal-body">
-            {/* Existing comments */}
-            {taskData?.comments?.length === 0 && (
+            {(!taskData?.comments || taskData.comments.length === 0) && (
               <div className="empty-state" style={{ padding: '30px 0' }}>
                 <div className="empty-state-icon">💬</div>
                 <div className="empty-state-title">No comments yet</div>
                 <div className="empty-state-desc">Start the conversation.</div>
               </div>
             )}
-            {taskData?.comments?.map(c => (
+            {(taskData?.comments || []).map((c) => (
               <div key={c._id} className="comment">
-                <div className="avatar" style={{ background: `hsl(${c.author?.name?.charCodeAt(0) * 15 || 200}, 60%, 45%)` }}>
+                <div
+                  className="avatar"
+                  style={{ background: `hsl(${(c.author?.name?.charCodeAt(0) || 65) * 15}, 60%, 45%)`, flexShrink: 0 }}
+                >
                   {getInitials(c.author?.name)}
                 </div>
                 <div className="comment-body">
@@ -215,17 +219,19 @@ export default function TaskModal({ task, projectId, defaultStatus, users, onClo
                 </div>
               </div>
             ))}
-            {/* Add comment */}
             <div className="divider" />
             <form onSubmit={handleComment}>
               <div className="flex gap-3 items-center">
-                <div className="avatar" style={{ background: `hsl(${user?.name?.charCodeAt(0) * 15 || 200}, 60%, 45%)`, flexShrink: 0 }}>
+                <div
+                  className="avatar"
+                  style={{ background: `hsl(${(user?.name?.charCodeAt(0) || 65) * 15}, 60%, 45%)`, flexShrink: 0 }}
+                >
                   {getInitials(user?.name)}
                 </div>
                 <input
                   className="form-input flex-1"
                   value={comment}
-                  onChange={e => setComment(e.target.value)}
+                  onChange={(e) => setComment(e.target.value)}
                   placeholder="Write a comment…"
                 />
                 <button type="submit" className="btn btn-primary btn-sm" disabled={commenting || !comment.trim()}>
