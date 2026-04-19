@@ -1,12 +1,12 @@
 const express = require('express');
-const Task = require('../models/Task');
+const Task    = require('../models/Task');
 const Project = require('../models/Project');
 const { protect } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(protect);
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function getUserProjectIds(userId) {
   const projects = await Project.find({
@@ -16,11 +16,11 @@ async function getUserProjectIds(userId) {
 }
 
 async function userCanAccessProject(userId, projectId) {
-  const project = await Project.findOne({
+  const p = await Project.findOne({
     _id: projectId,
     $or: [{ owner: userId }, { 'members.user': userId }],
   });
-  return !!project;
+  return !!p;
 }
 
 async function userCanAccessTask(userId, taskId) {
@@ -30,13 +30,24 @@ async function userCanAccessTask(userId, taskId) {
   return { task, allowed };
 }
 
-// ─── Routes ──────────────────────────────────────────────────────────────────
+function populateTask(query) {
+  return query
+    .populate('assignee', 'name email avatar')
+    .populate('reporter', 'name email avatar')
+    .populate('comments.author', 'name avatar');
+}
 
-// GET /api/tasks?project=id&status=&assignee=&priority=&mine=true
+// Emit to the project room
+function emit(req, projectId, event, payload) {
+  req.io?.to(`project:${projectId}`).emit(event, payload);
+}
+
+// ── Routes ────────────────────────────────────────────────────────────────────
+
+// GET /api/tasks
 router.get('/', async (req, res) => {
   try {
     let projectIds;
-
     if (req.query.project) {
       const allowed = await userCanAccessProject(req.user._id, req.query.project);
       if (!allowed) return res.status(403).json({ message: 'Access denied to this project' });
@@ -46,7 +57,7 @@ router.get('/', async (req, res) => {
     }
 
     const filter = { project: { $in: projectIds } };
-    if (req.query.status) filter.status = req.query.status;
+    if (req.query.status)   filter.status   = req.query.status;
     if (req.query.priority) filter.priority = req.query.priority;
 
     if (req.query.mine === 'true') {
@@ -55,12 +66,7 @@ router.get('/', async (req, res) => {
       filter.assignee = req.query.assignee;
     }
 
-    const tasks = await Task.find(filter)
-      .populate('assignee', 'name email avatar')
-      .populate('reporter', 'name email avatar')
-      .populate('comments.author', 'name avatar')
-      .sort({ order: 1, createdAt: -1 });
-
+    const tasks = await populateTask(Task.find(filter)).sort({ order: 1, createdAt: -1 });
     res.json(tasks);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -75,11 +81,10 @@ router.post('/', async (req, res) => {
     if (!allowed) return res.status(403).json({ message: 'Access denied to this project' });
 
     const task = await Task.create({ ...req.body, reporter: req.user._id });
-    await task.populate([
-      { path: 'assignee', select: 'name email avatar' },
-      { path: 'reporter', select: 'name email avatar' },
-    ]);
-    res.status(201).json(task);
+    const populated = await populateTask(Task.findById(task._id));
+
+    emit(req, req.body.project, 'task:created', populated);
+    res.status(201).json(populated);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -91,13 +96,8 @@ router.get('/:id', async (req, res) => {
     const { task, allowed } = await userCanAccessTask(req.user._id, req.params.id);
     if (!task) return res.status(404).json({ message: 'Task not found' });
     if (!allowed) return res.status(403).json({ message: 'Access denied' });
-
-    await task.populate([
-      { path: 'assignee', select: 'name email avatar' },
-      { path: 'reporter', select: 'name email avatar' },
-      { path: 'comments.author', select: 'name avatar' },
-    ]);
-    res.json(task);
+    const populated = await populateTask(Task.findById(task._id));
+    res.json(populated);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -110,14 +110,11 @@ router.put('/:id', async (req, res) => {
     if (!task) return res.status(404).json({ message: 'Task not found' });
     if (!allowed) return res.status(403).json({ message: 'Access denied' });
 
-    const updated = await Task.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    })
-      .populate('assignee', 'name email avatar')
-      .populate('reporter', 'name email avatar')
-      .populate('comments.author', 'name avatar');
+    const updated = await populateTask(
+      Task.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })
+    );
 
+    emit(req, String(task.project), 'task:updated', updated);
     res.json(updated);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -131,7 +128,10 @@ router.delete('/:id', async (req, res) => {
     if (!task) return res.status(404).json({ message: 'Task not found' });
     if (!allowed) return res.status(403).json({ message: 'Access denied' });
 
+    const projectId = String(task.project);
     await Task.findByIdAndDelete(req.params.id);
+
+    emit(req, projectId, 'task:deleted', { taskId: req.params.id, projectId });
     res.json({ message: 'Task deleted successfully' });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -147,8 +147,10 @@ router.post('/:id/comments', async (req, res) => {
 
     task.comments.push({ author: req.user._id, text: req.body.text });
     await task.save();
-    await task.populate('comments.author', 'name avatar');
-    res.status(201).json(task);
+    const populated = await populateTask(Task.findById(task._id));
+
+    emit(req, String(task.project), 'task:updated', populated);
+    res.status(201).json(populated);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -165,8 +167,14 @@ router.patch('/:id/status', async (req, res) => {
       req.params.id,
       { status: req.body.status },
       { new: true }
-    ).populate('assignee', 'name email avatar');
+    ).populate('assignee', 'name email avatar')
+     .populate('reporter', 'name email avatar');
 
+    emit(req, String(task.project), 'task:status_changed', {
+      taskId: req.params.id,
+      status: req.body.status,
+      task: updated,
+    });
     res.json(updated);
   } catch (err) {
     res.status(400).json({ message: err.message });

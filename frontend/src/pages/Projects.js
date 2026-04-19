@@ -27,7 +27,9 @@ export default function Projects() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this project and all its tasks?')) return;
@@ -35,8 +37,8 @@ export default function Projects() {
       await api.delete(`/projects/${id}`);
       setProjects((p) => p.filter((x) => x._id !== id));
       toast.success('Project deleted');
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to delete project');
+    } catch {
+      toast.error('Failed to delete project');
     }
   };
 
@@ -53,7 +55,10 @@ export default function Projects() {
       <div className="topbar">
         <div className="topbar-title">Projects</div>
         <div className="topbar-actions">
-          <button className="btn btn-primary btn-sm" onClick={() => { setEditProject(null); setShowModal(true); }}>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => { setEditProject(null); setShowModal(true); }}
+          >
             + New Project
           </button>
         </div>
@@ -87,24 +92,24 @@ export default function Projects() {
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Stats row */}
         <div className="grid-4 mb-4">
           {[
-            { label: 'Total Projects', key: 'all', cls: 'accent' },
-            { label: 'Active', key: 'active', cls: 'green' },
-            { label: 'On Hold', key: 'on-hold', cls: 'yellow' },
-            { label: 'Completed', key: 'completed', cls: 'blue' },
-          ].map((s) => (
-            <div key={s.key} className="card stat-card">
-              <div className="stat-label">{s.label}</div>
-              <div className={`stat-value ${s.cls}`}>
-                {s.key === 'all' ? projects.length : projects.filter((p) => p.status === s.key).length}
+            { label: 'Total Projects', s: 'all', cls: 'accent' },
+            { label: 'Active', s: 'active', cls: 'green' },
+            { label: 'On Hold', s: 'on-hold', cls: 'yellow' },
+            { label: 'Completed', s: 'completed', cls: 'blue' },
+          ].map(({ label, s, cls }) => (
+            <div key={s} className="card stat-card">
+              <div className="stat-label">{label}</div>
+              <div className={`stat-value ${cls}`}>
+                {s === 'all' ? projects.length : projects.filter((p) => p.status === s).length}
               </div>
             </div>
           ))}
         </div>
 
-        {/* Grid */}
+        {/* Project grid */}
         {filtered.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📁</div>
@@ -112,21 +117,29 @@ export default function Projects() {
               {search || filter !== 'all' ? 'No matching projects' : 'No projects yet'}
             </div>
             <div className="empty-state-desc">
-              {search || filter !== 'all' ? 'Try adjusting your filters.' : 'Create your first project to get started.'}
+              {search || filter !== 'all'
+                ? 'Try adjusting your filters.'
+                : 'Create your first project to get started.'}
             </div>
             {!search && filter === 'all' && (
-              <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Create Project</button>
+              <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+                + Create Project
+              </button>
             )}
           </div>
         ) : (
           <div className="grid-3">
             {filtered.map((p) => {
-              // members is now [{ user: {...}, role }]
+              // Flatten member users for display (members is now [{user, role}])
               const memberUsers = (p.members || []).map((m) => m.user).filter(Boolean);
-              const allPeople = [p.owner, ...memberUsers].filter(Boolean);
+              const allParticipants = [p.owner, ...memberUsers].filter(Boolean);
 
               return (
-                <div key={p._id} className="card project-card" style={{ '--color': p.color || '#cba6f7' }}>
+                <div
+                  key={p._id}
+                  className="card project-card"
+                  style={{ '--color': p.color || '#cba6f7' }}
+                >
                   <div className="flex items-center justify-between mb-3">
                     <span className={`badge badge-${p.status}`}>{p.status}</span>
                     <div className="flex gap-2">
@@ -134,18 +147,24 @@ export default function Projects() {
                         className="btn btn-ghost btn-sm btn-icon"
                         title="Edit"
                         onClick={() => { setEditProject(p); setShowModal(true); }}
-                      >✏️</button>
+                      >
+                        ✏️
+                      </button>
                       <button
                         className="btn btn-ghost btn-sm btn-icon"
                         title="Delete"
                         onClick={() => handleDelete(p._id)}
-                      >🗑️</button>
+                      >
+                        🗑️
+                      </button>
                     </div>
                   </div>
 
                   <Link to={`/projects/${p._id}`} style={{ textDecoration: 'none' }}>
                     <div className="project-card-name">{p.name}</div>
-                    <div className="project-card-desc">{p.description || 'No description provided.'}</div>
+                    <div className="project-card-desc">
+                      {p.description || 'No description provided.'}
+                    </div>
                   </Link>
 
                   <div className="divider" />
@@ -155,24 +174,33 @@ export default function Projects() {
                       <span className={`badge badge-${p.priority}`}>{p.priority}</span>
                       {p.dueDate && (
                         <span className="text-xs text-muted">
-                          Due {new Date(p.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          Due{' '}
+                          {new Date(p.dueDate).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
                         </span>
                       )}
                     </div>
                     <div className="member-stack">
-                      {allPeople.slice(0, 4).map((m, i) => (
+                      {allParticipants.slice(0, 4).map((m, i) => (
                         <div
                           key={m._id || i}
                           className="avatar"
                           title={m.name}
-                          style={{ background: `hsl(${(m.name?.charCodeAt(0) || 65) * 15}, 60%, 45%)` }}
+                          style={{
+                            background: `hsl(${(m.name?.charCodeAt(0) || 65) * 15}, 60%, 45%)`,
+                          }}
                         >
                           {getInitials(m.name)}
                         </div>
                       ))}
-                      {allPeople.length > 4 && (
-                        <div className="avatar" style={{ background: 'var(--surface1)', color: 'var(--subtext0)', fontSize: '0.6rem' }}>
-                          +{allPeople.length - 4}
+                      {allParticipants.length > 4 && (
+                        <div
+                          className="avatar"
+                          style={{ background: 'var(--surface1)', color: 'var(--subtext0)', fontSize: '0.6rem' }}
+                        >
+                          +{allParticipants.length - 4}
                         </div>
                       )}
                     </div>
@@ -189,7 +217,7 @@ export default function Projects() {
           project={editProject}
           onClose={() => { setShowModal(false); setEditProject(null); }}
           onSave={(p) => {
-            if (editProject) setProjects((prev) => prev.map((x) => x._id === p._id ? p : x));
+            if (editProject) setProjects((prev) => prev.map((x) => (x._id === p._id ? p : x)));
             else setProjects((prev) => [p, ...prev]);
             setShowModal(false);
             setEditProject(null);

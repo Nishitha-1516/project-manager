@@ -5,19 +5,31 @@ import toast from 'react-hot-toast';
 import { format, isBefore } from 'date-fns';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { useProjectSocket } from '../hooks/useProjectSocket';
 import TaskModal from '../components/TaskModal';
 import ProjectModal from '../components/ProjectModal';
 import MembersPanel from '../components/MembersPanel';
+import ConnectionBadge from '../components/ConnectionBadge';
 
 const COLUMNS = [
-  { id: 'todo',        label: 'To Do',       color: 'var(--overlay2)' },
+  { id: 'todo',        label: 'To Do',      color: 'var(--overlay2)' },
   { id: 'in-progress', label: 'In Progress', color: 'var(--mauve)'   },
   { id: 'review',      label: 'Review',      color: 'var(--yellow)'  },
   { id: 'done',        label: 'Done',        color: 'var(--green)'   },
 ];
 
 function getInitials(name = '') {
-  return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function buildStats(tasks) {
+  return {
+    total:      tasks.length,
+    todo:       tasks.filter(t => t.status === 'todo').length,
+    inProgress: tasks.filter(t => t.status === 'in-progress').length,
+    review:     tasks.filter(t => t.status === 'review').length,
+    done:       tasks.filter(t => t.status === 'done').length,
+  };
 }
 
 export default function ProjectDetail() {
@@ -25,43 +37,29 @@ export default function ProjectDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const [project, setProject]           = useState(null);
-  const [tasks, setTasks]               = useState([]);
-  const [loading, setLoading]           = useState(true);
-  const [tab, setTab]                   = useState('board');
-  const [showTaskModal, setShowTaskModal]       = useState(false);
-  const [showProjectModal, setShowProjectModal] = useState(false);
-  const [selectedTask, setSelectedTask] = useState(null);
-  const [defaultStatus, setDefaultStatus]       = useState('todo');
-  const [stats, setStats]               = useState(null);
-  const [projectUsers, setProjectUsers] = useState([]); // members + owner for assignment
-  const [allUsers, setAllUsers]         = useState([]); // all registered users for invite
+  const [project, setProject]             = useState(null);
+  const [tasks, setTasks]                 = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [tab, setTab]                     = useState('board');
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [showProjModal, setShowProjModal] = useState(false);
+  const [selectedTask, setSelectedTask]   = useState(null);
+  const [defaultStatus, setDefaultStatus] = useState('todo');
+  const [stats, setStats]                 = useState(null);
 
-  // ── derived role flags ──────────────────────────────────────────────────
-  const isOwner = project ? String(project.owner?._id) === String(user?._id) : false;
-  const myMembership = project?.members?.find((m) => String(m.user?._id) === String(user?._id));
-  const isProjectAdmin = isOwner || myMembership?.role === 'admin';
-
-  // ── data loading ─────────────────────────────────────────────────────────
+  // ── Initial data load ──────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     try {
-      const [pRes, tRes, sRes, uAllRes] = await Promise.all([
+      const [pRes, tRes, sRes] = await Promise.all([
         api.get(`/projects/${id}`),
         api.get(`/tasks?project=${id}`),
         api.get(`/projects/${id}/stats`),
-        api.get('/users/all'),
       ]);
-      const proj = pRes.data;
-      setProject(proj);
+      setProject(pRes.data);
       setTasks(tRes.data);
       setStats(sRes.data);
-      setAllUsers(uAllRes.data);
-
-      // Build the assignable list: owner + members
-      const memberUsers = (proj.members || []).map((m) => m.user).filter(Boolean);
-      setProjectUsers([proj.owner, ...memberUsers].filter(Boolean));
     } catch {
-      toast.error('Project not found');
+      toast.error('Project not found or access denied');
       navigate('/projects');
     } finally {
       setLoading(false);
@@ -70,85 +68,179 @@ export default function ProjectDetail() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ── drag & drop ──────────────────────────────────────────────────────────
+  // ── Real-time socket handlers ──────────────────────────────────────────────
+  const currentUserId = String(user?._id);
+
+  useProjectSocket(id, {
+    onTaskCreated: (task) => {
+      setTasks(prev => {
+        if (prev.find(t => t._id === task._id)) return prev; // duplicate guard
+        const next = [task, ...prev];
+        setStats(buildStats(next));
+        return next;
+      });
+      toast('New task added', { icon: '📋' });
+    },
+
+    onTaskUpdated: (task) => {
+      setTasks(prev => {
+        const next = prev.map(t => t._id === task._id ? task : t);
+        setStats(buildStats(next));
+        return next;
+      });
+    },
+
+    onTaskDeleted: ({ taskId }) => {
+      setTasks(prev => {
+        const next = prev.filter(t => t._id !== taskId);
+        setStats(buildStats(next));
+        return next;
+      });
+      // Close modal if it was showing the deleted task
+      setSelectedTask(prev => prev?._id === taskId ? null : prev);
+      if (selectedTask?._id === taskId) setShowTaskModal(false);
+    },
+
+    onTaskStatusChanged: ({ taskId, status, task }) => {
+      setTasks(prev => {
+        const next = prev.map(t => t._id === taskId ? { ...t, status, ...(task || {}) } : t);
+        setStats(buildStats(next));
+        return next;
+      });
+    },
+
+    onProjectUpdated: (updatedProject) => {
+      setProject(updatedProject);
+      toast('Project details updated', { icon: '✏️' });
+    },
+
+    onProjectDeleted: () => {
+      navigate('/projects');
+    },
+
+    onMembersUpdated: (payload) => {
+      // If it's a full project object, replace; if it's a removal payload, patch members
+      if (payload.members && !payload.removedUserId) {
+        setProject(payload);
+      } else if (payload.removedUserId) {
+        if (String(payload.removedUserId) === currentUserId) {
+          navigate('/projects');
+        } else {
+          setProject(prev => prev ? {
+            ...prev,
+            members: prev.members.filter(
+              m => String(m.user?._id || m.user) !== String(payload.removedUserId)
+            ),
+          } : prev);
+        }
+      }
+    },
+  }, currentUserId);
+
+  // ── Role helpers ───────────────────────────────────────────────────────────
+  const isOwner        = project ? String(project.owner?._id || project.owner) === currentUserId : false;
+  const myMembership   = project?.members?.find(m => String(m.user?._id || m.user) === currentUserId);
+  const isProjectAdmin = isOwner || myMembership?.role === 'admin';
+
+  // ── Drag-and-drop ──────────────────────────────────────────────────────────
   const onDragEnd = async (result) => {
     const { destination, source, draggableId } = result;
     if (!destination || (destination.droppableId === source.droppableId && destination.index === source.index)) return;
 
     const newStatus = destination.droppableId;
-    setTasks((prev) => prev.map((t) => t._id === draggableId ? { ...t, status: newStatus } : t));
+    // Optimistic update
+    setTasks(prev => {
+      const next = prev.map(t => t._id === draggableId ? { ...t, status: newStatus } : t);
+      setStats(buildStats(next));
+      return next;
+    });
+
     try {
       await api.patch(`/tasks/${draggableId}/status`, { status: newStatus });
+      // Socket will broadcast to other users; our own optimistic update already applied
     } catch {
       toast.error('Failed to update task status');
       loadData();
     }
   };
 
-  // ── task callbacks ───────────────────────────────────────────────────────
+  // ── Task save / delete ─────────────────────────────────────────────────────
   const handleTaskSave = (task) => {
-    setTasks((prev) => {
-      const exists = prev.find((t) => t._id === task._id);
-      return exists ? prev.map((t) => t._id === task._id ? task : t) : [task, ...prev];
+    // Socket will propagate to other users; update own state too
+    setTasks(prev => {
+      const exists = prev.find(t => t._id === task._id);
+      const next = exists ? prev.map(t => t._id === task._id ? task : t) : [task, ...prev];
+      setStats(buildStats(next));
+      return next;
     });
     setShowTaskModal(false);
     setSelectedTask(null);
-    loadData(); // refresh stats
   };
 
   const handleTaskDelete = async (taskId) => {
     if (!window.confirm('Delete this task?')) return;
     try {
       await api.delete(`/tasks/${taskId}`);
-      setTasks((prev) => prev.filter((t) => t._id !== taskId));
+      // Optimistic — socket event will also arrive and is idempotent
+      setTasks(prev => {
+        const next = prev.filter(t => t._id !== taskId);
+        setStats(buildStats(next));
+        return next;
+      });
       setShowTaskModal(false);
       setSelectedTask(null);
       toast.success('Task deleted');
-      loadData();
-    } catch { toast.error('Failed to delete task'); }
+    } catch {
+      toast.error('Failed to delete task');
+    }
   };
 
   if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
   if (!project) return null;
 
   const completionPct = stats?.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
+  const projectUsers  = [project.owner, ...(project.members || []).map(m => m.user)].filter(Boolean);
 
   return (
     <div>
       {/* ── Topbar ── */}
       <div className="topbar">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3" style={{ minWidth: 0 }}>
           <button className="btn btn-ghost btn-sm btn-icon" onClick={() => navigate('/projects')}>←</button>
-          <div className="topbar-title">{project.name}</div>
+          <div style={{ minWidth: 0 }}>
+            <div className="topbar-title truncate">{project.name}</div>
+          </div>
           <span className={`badge badge-${project.status}`}>{project.status}</span>
           <span className={`badge badge-${project.priority}`}>{project.priority}</span>
+          {isOwner && (
+            <span className="badge" style={{ background: 'rgba(203,166,247,0.15)', color: 'var(--accent)', border: '1px solid rgba(203,166,247,0.3)' }}>Owner</span>
+          )}
+          {!isOwner && myMembership && (
+            <span className="badge" style={{ background: 'rgba(166,227,161,0.12)', color: 'var(--green)', border: '1px solid rgba(166,227,161,0.25)' }}>{myMembership.role}</span>
+          )}
         </div>
         <div className="topbar-actions">
+          <ConnectionBadge />
           {isProjectAdmin && (
-            <button className="btn btn-secondary btn-sm" onClick={() => setShowProjectModal(true)}>⚙ Edit</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => setShowProjModal(true)}>⚙ Edit</button>
           )}
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => { setSelectedTask(null); setDefaultStatus('todo'); setShowTaskModal(true); }}
-          >
+          <button className="btn btn-primary btn-sm" onClick={() => { setSelectedTask(null); setDefaultStatus('todo'); setShowTaskModal(true); }}>
             + Add Task
           </button>
         </div>
       </div>
 
       <div className="page-content">
-        {project.description && (
-          <p className="text-muted text-sm mb-4">{project.description}</p>
-        )}
+        {project.description && <p className="text-muted text-sm mb-4">{project.description}</p>}
 
-        {/* ── Stats row ── */}
+        {/* ── Stats ── */}
         <div className="grid-4 mb-4">
           {[
-            { label: 'Total Tasks',  value: stats?.total      || 0, cls: ''       },
-            { label: 'In Progress',  value: stats?.inProgress || 0, cls: 'accent' },
-            { label: 'In Review',    value: stats?.review     || 0, cls: 'yellow' },
-            { label: 'Completed',    value: stats?.done       || 0, cls: 'green'  },
-          ].map((s) => (
+            { label: 'Total Tasks', value: stats?.total || 0,      cls: '' },
+            { label: 'In Progress', value: stats?.inProgress || 0, cls: 'accent' },
+            { label: 'In Review',   value: stats?.review || 0,     cls: 'yellow' },
+            { label: 'Completed',   value: stats?.done || 0,       cls: 'green' },
+          ].map(s => (
             <div key={s.label} className="card stat-card">
               <div className="stat-label">{s.label}</div>
               <div className={`stat-value ${s.cls}`}>{s.value}</div>
@@ -156,7 +248,7 @@ export default function ProjectDetail() {
           ))}
         </div>
 
-        {/* ── Progress bar ── */}
+        {/* ── Progress ── */}
         <div className="card mb-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-bold">Overall Progress</span>
@@ -166,9 +258,9 @@ export default function ProjectDetail() {
             <div className="progress-fill" style={{ width: `${completionPct}%` }} />
           </div>
           <div className="flex gap-4 mt-2" style={{ flexWrap: 'wrap' }}>
-            {COLUMNS.map((col) => (
+            {COLUMNS.map(col => (
               <span key={col.id} className="text-xs text-muted">
-                <span style={{ color: col.color }}>■</span> {col.label}: {tasks.filter((t) => t.status === col.id).length}
+                <span style={{ color: col.color }}>■</span> {col.label}: {tasks.filter(t => t.status === col.id).length}
               </span>
             ))}
           </div>
@@ -176,24 +268,21 @@ export default function ProjectDetail() {
 
         {/* ── Tabs ── */}
         <div className="tab-bar">
-          {[['board','Kanban Board'], ['list','List View'], ['members','Members']].map(([v, l]) => (
-            <button key={v} className={`tab-btn ${tab === v ? 'active' : ''}`} onClick={() => setTab(v)}>
-              {l}
-              {v === 'members' && (
-                <span style={{ marginLeft: 6, background: 'var(--surface0)', borderRadius: 10, padding: '1px 6px', fontSize: '0.7rem', color: 'var(--subtext0)' }}>
-                  {1 + (project.members?.length || 0)}
-                </span>
-              )}
-            </button>
+          {[
+            ['board',   'Kanban Board'],
+            ['list',    'List View'],
+            ['members', `Members (${(project.members?.length || 0) + 1})`],
+          ].map(([v, l]) => (
+            <button key={v} className={`tab-btn ${tab === v ? 'active' : ''}`} onClick={() => setTab(v)}>{l}</button>
           ))}
         </div>
 
-        {/* ── Kanban Board ── */}
+        {/* ── Kanban ── */}
         {tab === 'board' && (
           <DragDropContext onDragEnd={onDragEnd}>
             <div className="kanban-board">
-              {COLUMNS.map((col) => {
-                const colTasks = tasks.filter((t) => t.status === col.id);
+              {COLUMNS.map(col => {
+                const colTasks = tasks.filter(t => t.status === col.id);
                 return (
                   <div key={col.id} className="kanban-col">
                     <div className="kanban-col-header">
@@ -210,7 +299,6 @@ export default function ProjectDetail() {
                         >+</button>
                       </div>
                     </div>
-
                     <Droppable droppableId={col.id}>
                       {(provided, snapshot) => (
                         <div
@@ -231,7 +319,7 @@ export default function ProjectDetail() {
                                   <div className="task-card-title">{task.title}</div>
                                   <div className="task-card-meta">
                                     <span className={`badge badge-${task.priority}`}>{task.priority}</span>
-                                    {task.tags?.[0] && <span className="tag">{task.tags[0]}</span>}
+                                    {task.tags?.length > 0 && <span className="tag">{task.tags[0]}</span>}
                                   </div>
                                   <div className="task-card-footer">
                                     {task.dueDate ? (
@@ -242,8 +330,8 @@ export default function ProjectDetail() {
                                     {task.assignee && (
                                       <div
                                         className="avatar"
-                                        style={{ width: 24, height: 24, fontSize: '0.65rem', background: `hsl(${(task.assignee.name?.charCodeAt(0) || 65) * 15}, 60%, 45%)` }}
                                         title={task.assignee.name}
+                                        style={{ width: 24, height: 24, fontSize: '0.65rem', background: `hsl(${(task.assignee.name?.charCodeAt(0) || 65) * 15}, 55%, 42%)` }}
                                       >
                                         {getInitials(task.assignee.name)}
                                       </div>
@@ -269,7 +357,7 @@ export default function ProjectDetail() {
           </DragDropContext>
         )}
 
-        {/* ── List View ── */}
+        {/* ── List view ── */}
         {tab === 'list' && (
           <div>
             {tasks.length === 0 ? (
@@ -277,23 +365,20 @@ export default function ProjectDetail() {
                 <div className="empty-state-icon">📋</div>
                 <div className="empty-state-title">No tasks yet</div>
                 <div className="empty-state-desc">Add your first task to get started.</div>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => { setSelectedTask(null); setDefaultStatus('todo'); setShowTaskModal(true); }}
-                >+ Add Task</button>
+                <button className="btn btn-primary" onClick={() => { setSelectedTask(null); setDefaultStatus('todo'); setShowTaskModal(true); }}>+ Add Task</button>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div className="card" style={{ padding: '10px 16px', display: 'grid', gridTemplateColumns: '1fr 110px 100px 140px 36px', gap: 12, alignItems: 'center' }}>
-                  {['Task', 'Status', 'Priority', 'Assignee', ''].map((h) => (
+                <div className="card" style={{ padding: '10px 16px', display: 'grid', gridTemplateColumns: '1fr 110px 100px 130px 36px', gap: 12, alignItems: 'center' }}>
+                  {['Task','Status','Priority','Assignee',''].map(h => (
                     <span key={h} className="text-xs text-muted font-bold" style={{ letterSpacing: '0.06em', textTransform: 'uppercase' }}>{h}</span>
                   ))}
                 </div>
-                {tasks.map((task) => (
+                {tasks.map(task => (
                   <div
                     key={task._id}
                     className="card card-clickable"
-                    style={{ padding: '12px 16px', display: 'grid', gridTemplateColumns: '1fr 110px 100px 140px 36px', gap: 12, alignItems: 'center' }}
+                    style={{ padding: '12px 16px', display: 'grid', gridTemplateColumns: '1fr 110px 100px 130px 36px', gap: 12, alignItems: 'center' }}
                     onClick={() => { setSelectedTask(task); setShowTaskModal(true); }}
                   >
                     <div>
@@ -309,7 +394,7 @@ export default function ProjectDetail() {
                     <div className="flex items-center gap-2">
                       {task.assignee ? (
                         <>
-                          <div className="avatar" style={{ width: 24, height: 24, fontSize: '0.65rem', background: `hsl(${(task.assignee.name?.charCodeAt(0) || 65) * 15}, 60%, 45%)` }}>
+                          <div className="avatar" style={{ width: 24, height: 24, fontSize: '0.65rem', background: `hsl(${(task.assignee.name?.charCodeAt(0) || 65) * 15}, 55%, 42%)` }}>
                             {getInitials(task.assignee.name)}
                           </div>
                           <span className="text-xs truncate">{task.assignee.name}</span>
@@ -318,8 +403,7 @@ export default function ProjectDetail() {
                     </div>
                     <button
                       className="btn btn-danger btn-sm btn-icon"
-                      onClick={(e) => { e.stopPropagation(); handleTaskDelete(task._id); }}
-                      title="Delete"
+                      onClick={e => { e.stopPropagation(); handleTaskDelete(task._id); }}
                     >✕</button>
                   </div>
                 ))}
@@ -328,24 +412,18 @@ export default function ProjectDetail() {
           </div>
         )}
 
-        {/* ── Members Tab ── */}
+        {/* ── Members tab ── */}
         {tab === 'members' && (
           <MembersPanel
             project={project}
-            allUsers={allUsers}
-            isProjectAdmin={isProjectAdmin}
+            currentUserId={currentUserId}
             isOwner={isOwner}
-            currentUserId={user?._id}
-            onProjectUpdate={(updated) => {
-              setProject(updated);
-              const memberUsers = (updated.members || []).map((m) => m.user).filter(Boolean);
-              setProjectUsers([updated.owner, ...memberUsers].filter(Boolean));
-            }}
+            isProjectAdmin={isProjectAdmin}
+            onProjectUpdate={setProject}
           />
         )}
       </div>
 
-      {/* ── Modals ── */}
       {showTaskModal && (
         <TaskModal
           task={selectedTask}
@@ -358,11 +436,11 @@ export default function ProjectDetail() {
         />
       )}
 
-      {showProjectModal && (
+      {showProjModal && (
         <ProjectModal
           project={project}
-          onClose={() => setShowProjectModal(false)}
-          onSave={(p) => { setProject(p); setShowProjectModal(false); }}
+          onClose={() => setShowProjModal(false)}
+          onSave={(p) => { setProject(p); setShowProjModal(false); }}
         />
       )}
     </div>

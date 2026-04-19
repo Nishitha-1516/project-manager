@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import toast from 'react-hot-toast';
 
 const IconDashboard = () => (
@@ -27,6 +28,7 @@ function getInitials(name = '') {
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { connected } = useSocket();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -54,6 +56,18 @@ export default function Layout() {
         </nav>
 
         <div className="sidebar-footer">
+          {/* Socket connection indicator */}
+          <div style={{ padding: '6px 12px 2px', display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{
+              width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+              background: connected ? 'var(--green)' : 'var(--overlay0)',
+              animation: connected ? 'pulse 2s infinite' : 'none',
+            }} />
+            <span style={{ fontSize: '0.72rem', color: connected ? 'var(--green)' : 'var(--overlay1)', fontWeight: 600 }}>
+              {connected ? 'Real-time on' : 'Connecting…'}
+            </span>
+          </div>
+
           <div className="user-badge">
             <div className="avatar">{getInitials(user?.name)}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
